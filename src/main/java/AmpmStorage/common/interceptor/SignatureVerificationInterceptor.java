@@ -40,7 +40,8 @@ public class SignatureVerificationInterceptor implements HandlerInterceptor {
         }
 
         // 3. 서명 재생성 (백엔드와 반드시 동일한 로직)
-        String messageToSign = request.getMethod() + "\n" + fileId + "\n" + expiry;
+        String methodForSignature = request.getMethod().equals("PUT") ? "POST" : request.getMethod();
+        String messageToSign = methodForSignature + "\n" + fileId + "\n" + expiry;
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
         mac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
         byte[] signatureBytes = mac.doFinal(messageToSign.getBytes(StandardCharsets.UTF_8));

@@ -29,11 +29,11 @@ public class StorageController {
         }
     }
 
-    @PutMapping("/{fileId}")
-    public ResponseEntity<String> uploadFile(@PathVariable String fileId, HttpServletRequest request) {
+    @PutMapping(value = "/{fileId}", consumes = "multipart/form-data")
+    public ResponseEntity<String> uploadFile(@PathVariable String fileId, @RequestParam("file") MultipartFile file) {
         try {
             Path targetLocation = this.fileStorageLocation.resolve(fileId);
-            try (InputStream inputStream = request.getInputStream()) {
+            try (InputStream inputStream = file.getInputStream()) {
                 Files.copy(inputStream, targetLocation, StandardCopyOption.REPLACE_EXISTING);
             }
             return ResponseEntity.ok("File uploaded successfully: " + fileId);
