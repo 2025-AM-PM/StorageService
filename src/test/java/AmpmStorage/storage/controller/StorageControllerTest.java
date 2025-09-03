@@ -2,6 +2,7 @@ package AmpmStorage.storage.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
@@ -17,6 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -48,7 +51,7 @@ class StorageControllerTest {
         // given (준비)
         String fileId = "test-upload-file-123";
         String fileContent = "Hello, World!";
-        String httpMethod = "POST"; // 서명 생성은 POST로 고정
+        String httpMethod = "PUT"; // 이제 PUT 요청은 PUT으로 서명 생성
         long expires = System.currentTimeMillis() / 1000 + 300; // 5분 후 만료
 
         // 인터셉터와 동일한 로직으로 서명 생성
@@ -59,7 +62,7 @@ class StorageControllerTest {
         String signature = Base64.getUrlEncoder().withoutPadding().encodeToString(signatureBytes);
 
         MockMultipartFile mockFile = new MockMultipartFile(
-            "file",
+            "file", // Controller의 @RequestParam 이름
             "original-filename.txt",
             "text/plain",
             fileContent.getBytes(StandardCharsets.UTF_8)
@@ -67,14 +70,11 @@ class StorageControllerTest {
 
         // when (실행)
         // MockMvc의 multipart는 PUT을 직접 지원하지 않으므로, POST로 보낸 뒤 메소드를 PUT으로 변경
-        mockMvc.perform(multipart("/storage/{fileId}", fileId)
+        mockMvc.perform(multipart(HttpMethod.PUT, "/storage/{fileId}", fileId)
                 .file(mockFile)
                 .param("expires", String.valueOf(expires))
-                .param("signature", signature)
-                .with(request -> {
-                    request.setMethod("PUT");
-                    return request;
-                }))
+                .param("signature", signature))
+            .andDo(print()) // 요청/응답 상세 정보 출력
             .andExpect(status().isOk());
 
         // then (검증)
@@ -83,3 +83,4 @@ class StorageControllerTest {
         assertThat(Files.readString(expectedFilePath)).isEqualTo(fileContent);
     }
 }
+

@@ -1,18 +1,23 @@
 package AmpmStorage.storage.controller;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-import jakarta.servlet.http.HttpServletRequest;
-import java.io.InputStream;
+import AmpmStorage.common.exception.BusinessException;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import java.io.IOException;
+import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/storage")
@@ -25,20 +30,20 @@ public class StorageController {
         try {
             Files.createDirectories(this.fileStorageLocation);
         } catch (Exception ex) {
-            throw new RuntimeException("Could not create the directory for storage.", ex);
+            // 애플리케이션 시작 시 디렉터리 생성 실패는 심각한 오류이므로 RuntimeException 유지
+            throw new RuntimeException("파일을 저장할 디렉터리를 생성할 수 없습니다.", ex);
         }
     }
 
-    @PutMapping(value = "/{fileId}", consumes = "multipart/form-data")
-    public ResponseEntity<String> uploadFile(@PathVariable String fileId, @RequestParam("file") MultipartFile file) {
+    @PutMapping(value = "/{fileId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<String> uploadFile(@PathVariable String fileId,
+                                             @Parameter(schema = @Schema(type = "string", format = "binary")) @RequestParam("file") MultipartFile file) {
         try {
             Path targetLocation = this.fileStorageLocation.resolve(fileId);
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, targetLocation, StandardCopyOption.REPLACE_EXISTING);
-            }
+            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
             return ResponseEntity.ok("File uploaded successfully: " + fileId);
-        } catch (Exception ex) {
-            return ResponseEntity.internalServerError().body("Could not store file.");
+        } catch (IOException ex) {
+            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 저장하는 중 오류가 발생했습니다.");
         }
     }
 
@@ -47,15 +52,18 @@ public class StorageController {
         try {
             Path filePath = this.fileStorageLocation.resolve(fileId).normalize();
             Resource resource = new UrlResource(filePath.toUri());
-            if (resource.exists()) {
+
+            if (resource.exists() && resource.isReadable()) {
                 return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
                     .body(resource);
             } else {
-                return ResponseEntity.notFound().build();
+                throw new BusinessException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없거나 읽을 수 없습니다: " + fileId);
             }
+        } catch (MalformedURLException ex) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "파일 경로가 올바르지 않습니다: " + fileId);
         } catch (Exception ex) {
-            return ResponseEntity.internalServerError().build();
+            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "파일에 접근하는 중 오류가 발생했습니다.");
         }
     }
 }
