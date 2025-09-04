@@ -23,6 +23,11 @@ public class SignatureVerificationInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // OPTIONS 요청 (CORS preflight)은 서명 검증을 건너뜁니다.
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
         String expiresStr = request.getParameter("expires");
         String providedSignature = request.getParameter("signature");
         Map<String, String> pathVariables = (Map<String, String>) request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
@@ -46,20 +51,27 @@ public class SignatureVerificationInterceptor implements HandlerInterceptor {
         }
 
         // 3. 서명 재생성
-        try {
-            String methodForSignature = request.getMethod();
-            String messageToSign = methodForSignature + "\n" + fileId + "\n" + expiry;
-            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-            mac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
-            byte[] signatureBytes = mac.doFinal(messageToSign.getBytes(StandardCharsets.UTF_8));
-            String expectedSignature = Base64.getUrlEncoder().withoutPadding().encodeToString(signatureBytes);
+        String methodForSignature = request.getMethod();
+        String messageToSign = methodForSignature + "\n" + fileId + "\n" + expiry;
 
-            // 4. 서명 비교
-            if (!providedSignature.equals(expectedSignature)) {
-                throw new BusinessException(HttpStatus.FORBIDDEN, "서명이 유효하지 않습니다.");
-            }
+        Mac mac;
+        SecretKeySpec secretKeySpec;
+        byte[] signatureBytes;
+        String expectedSignature;
+
+        try {
+            mac = Mac.getInstance(HMAC_ALGORITHM);
+            secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
+            mac.init(secretKeySpec);
+            signatureBytes = mac.doFinal(messageToSign.getBytes(StandardCharsets.UTF_8));
+            expectedSignature = Base64.getUrlEncoder().withoutPadding().encodeToString(signatureBytes);
         } catch (Exception e) {
-            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "서명 처리 중 서버 오류가 발생했습니다.");
+            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "서명 처리 중 서버 오류가 발생했습니다: [" + e.getClass().getSimpleName() + "] " + e.getMessage());
+        }
+
+        // 4. 서명 비교
+        if (!providedSignature.equals(expectedSignature)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "서명이 유효하지 않습니다.");
         }
 
         // 모든 검증 통과 시 컨트롤러로 요청 전달

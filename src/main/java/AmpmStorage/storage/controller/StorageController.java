@@ -41,6 +41,7 @@ public class StorageController {
         try {
             Path targetLocation = this.fileStorageLocation.resolve(fileId);
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("File saved to: " + targetLocation.toAbsolutePath());
             return ResponseEntity.ok("File uploaded successfully: " + fileId);
         } catch (IOException ex) {
             throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "파일을 저장하는 중 오류가 발생했습니다.");
@@ -51,6 +52,7 @@ public class StorageController {
     public ResponseEntity<Resource> downloadFile(@PathVariable String fileId) {
         try {
             Path filePath = this.fileStorageLocation.resolve(fileId).normalize();
+            System.out.println("Attempting to load file from: " + filePath.toAbsolutePath());
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
