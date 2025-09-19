@@ -22,7 +22,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**") // 모든 경로에 대해 CORS 허용
-                .allowedOrigins("null") // file:// Origin 허용 (로컬 파일에서 테스트 시 필요)
+                .allowedOrigins("null", "http://localhost:3000") // "null"과 "http://localhost:3000" Origin 허용
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);

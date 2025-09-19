@@ -63,7 +63,7 @@ class StorageControllerTest {
 
         MockMultipartFile mockFile = new MockMultipartFile(
             "file", // Controller의 @RequestParam 이름
-            "original-filename.txt",
+            "1/original-filename.txt",
             "text/plain",
             fileContent.getBytes(StandardCharsets.UTF_8)
         );
