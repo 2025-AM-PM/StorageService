@@ -11,7 +11,7 @@ on:
 # 워크플로우 전체에서 사용할 환경 변수
 env:
   JAVA_VERSION: '21'
-  APP_NAME: ampm-storage-test # 프로덕션 컨테이너와 이름 충돌 방지
+  APP_NAME: ampm-storage-test # 🚨 프로덕션과 충돌 방지를 위해 이름 변경
 
 jobs:
   # =======================================================
@@ -24,17 +24,14 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
-        
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
           cache: 'gradle'
-          
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-        
       - name: Build and Test with Gradle
         run: ./gradlew build
 
@@ -43,7 +40,8 @@ jobs:
   # =========================================================================
   cd:
     name: Continuous Deployment (Test)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' # develop 브랜치에 Push될 때만 실행
+    # 🚨 실행 조건을 develop 브랜치로 변경
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       # (1) 소스 코드 가져오기
@@ -58,6 +56,7 @@ jobs:
       - name: Copy source code to TEST server
         uses: appleboy/scp-action@v0.1.4
         with:
+          # 🚨 테스트 서버용 Secret 변수 사용
           host: ${{ secrets.TEST_DEPLOY_HOST }}
           username: ${{ secrets.TEST_DEPLOY_USER }}
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
@@ -68,10 +67,8 @@ jobs:
       # (4) 서버에 접속하여 배포 실행 (SSH)
       - name: Deploy on TEST server via SSH
         uses: appleboy/ssh-action@v1.0.3
-        # Secret을 원격 서버의 환경 변수로 안전하게 전달
-        env:
-          SECRET_KEY: ${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}
         with:
+          # 🚨 테스트 서버용 Secret 변수 사용
           host: ${{ secrets.TEST_DEPLOY_HOST }}
           username: ${{ secrets.TEST_DEPLOY_USER }}
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
@@ -80,7 +77,7 @@ jobs:
             set -euo pipefail
             echo "🚀 Starting deployment on TEST server..."
             
-            # 타겟 디렉토리로 이동
+            # 🚨 테스트 서버용 유저 이름 사용
             cd /home/${{ secrets.TEST_DEPLOY_USER }}/app/
 
             echo "📦 Unzipping source code..."
@@ -94,20 +91,13 @@ jobs:
             docker stop ${{ env.APP_NAME }} || true
             docker rm ${{ env.APP_NAME }} || true
 
-            # --- 👇 [Secret 값 검증 단계] ---
-            echo "--- Verifying SECRET_KEY ---"
-            # SECRET_KEY 변수가 비어있는지 아닌지 명확히 확인
-            echo "Value is: >>${SECRET_KEY}<<"
-            echo "----------------------------"
-            # --- 👆 [Secret 값 검증 단계] ---
-
             echo "▶️ Running new container..."
             docker run -d \
               -p 6737:6736 \
               --name ${{ env.APP_NAME }} \
               -v /data/storage_test:/files \
               -e SPRING_PROFILES_ACTIVE=test \
-              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
+              -e APP_STORAGE_SECRET_KEY="${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
               ${{ env.APP_NAME }}
             
