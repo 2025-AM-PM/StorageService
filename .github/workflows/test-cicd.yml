@@ -68,7 +68,6 @@ jobs:
       # (4) 서버에 접속하여 배포 실행 (SSH)
       - name: Deploy on TEST server via SSH
         uses: appleboy/ssh-action@v1.0.3
-        # Secret을 원격 서버의 환경 변수로 안전하게 전달
         env:
           SECRET_KEY: ${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}
         with:
@@ -77,10 +76,10 @@ jobs:
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.TEST_DEPLOY_PORT }}
           script: |
-            set -euo pipefail
+            # 🚨 -x 옵션을 추가하여 모든 실행 명령어를 로그에 출력합니다.
+            set -euxo pipefail
             echo "🚀 Starting deployment on TEST server..."
             
-            # 타겟 디렉토리로 이동
             cd /home/${{ secrets.TEST_DEPLOY_USER }}/app/
 
             echo "📦 Unzipping source code..."
@@ -103,5 +102,16 @@ jobs:
               -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
               ${{ env.APP_NAME }}
+            
+            # --- 👇 [디버깅 코드 추가] ---
+            echo "⏳ Waiting 5 seconds for container to initialize..."
+            sleep 5
+
+            echo "🔎 Checking container status..."
+            docker ps -a --filter "name=${{ env.APP_NAME }}"
+
+            echo "📋 Fetching container logs..."
+            docker logs ${{ env.APP_NAME }}
+            # --- 👆 [디버깅 코드 추가] ---
             
             echo "🎉 TEST Deployment successful!"
