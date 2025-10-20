@@ -47,9 +47,9 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # (2) 배포할 소스 코드를 zip 파일로 압축
+      # (2) 배포할 소스 코드를 zip 파일로 압축 (불필요한 .git, .github 폴더 제외)
       - name: Archive source code
-        run: zip -r source.zip .
+        run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
       # (3) 압축된 소스 코드를 서버로 복사 (SCP)
       - name: Copy source code to server
@@ -92,7 +92,7 @@ jobs:
             docker run -d \
               -p 6736:6736 \
               --name ${{ env.APP_NAME }} \
-              -v ${{ secrets.MAIN_STORAGE_BASE }}:/files \  # <-- Secret 값 사용
+              -v "${{ secrets.MAIN_STORAGE_BASE }}:/files" \  # <--- ✅ 수정됨
               -e SPRING_PROFILES_ACTIVE=main \
               -e APP_STORAGE_SECRET_KEY="${{ secrets.APP_STORAGE_SECRET_KEY }}" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
