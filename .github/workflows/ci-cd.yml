@@ -3,99 +3,99 @@ name: ampm-storage CI/CD
 
 # 워크플로우 실행 조건
 on:
-  pull_request:
-    branches: [ "main" ]
-  push:
-    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
 
 # 워크플로우 전체에서 사용할 환경 변수
 env:
-  JAVA_VERSION: '21'
-  APP_NAME: ampm-storage
+  JAVA_VERSION: '21'
+  APP_NAME: ampm-storage
 
 jobs:
-  # ==================================================
-  # 1. CI Job (main 브랜치로의 Pull Request 시 실행)
-  # ==================================================
-  ci:
-    name: Continuous Integration
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: 'gradle'
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-      - name: Build and Test with Gradle
-        run: ./gradlew build
+  # ==================================================
+  # 1. CI Job (main 브랜치로의 Pull Request 시 실행)
+  # ==================================================
+  ci:
+    name: Continuous Integration
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'gradle'
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      - name: Build and Test with Gradle
+        run: ./gradlew build
 
-  # ========================================================================
-  # 2. CD Job (main 브랜치에 Push(Merge) 시 실행)
-  # ========================================================================
-  cd:
-    name: Continuous Deployment
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      # (1) 소스 코드 가져오기
-      - name: Checkout source code
-        uses: actions/checkout@v4
+  # ========================================================================
+  # 2. CD Job (main 브랜치에 Push(Merge) 시 실행)
+  # ========================================================================
+  cd:
+    name: Continuous Deployment
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # (1) 소스 코드 가져오기
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
-      # (2) 배포할 소스 코드를 zip 파일로 압축
-      - name: Archive source code
-        run: zip -r source.zip .
+      # (2) 배포할 소스 코드를 zip 파일로 압축
+      - name: Archive source code
+        run: zip -r source.zip .
 
-      # (3) 압축된 소스 코드를 서버로 복사 (SCP)
-      - name: Copy source code to server
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          source: "source.zip"
-          target: /home/${{ secrets.DEPLOY_USER }}/app/
+      # (3) 압축된 소스 코드를 서버로 복사 (SCP)
+      - name: Copy source code to server
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: "source.zip"
+          target: /home/${{ secrets.DEPLOY_USER }}/app/
 
-      # (4) 서버에 접속하여 배포 실행 (SSH)
-      - name: Deploy on server via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            set -euo pipefail
-            echo "🚀 Starting deployment on server..."
-            
-            # 타겟 디렉토리로 이동
-            cd /home/${{ secrets.DEPLOY_USER }}/app/
+      # (4) 서버에 접속하여 배포 실행 (SSH)
+      - name: Deploy on server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -euo pipefail
+            echo "🚀 Starting deployment on server..."
+            
+            # 타겟 디렉토리로 이동
+            cd /home/${{ secrets.DEPLOY_USER }}/app/
 
-            echo "📦 Unzipping source code..."
-            unzip -o source.zip
-            rm source.zip
+            echo "📦 Unzipping source code..."
+            unzip -o source.zip
+            rm source.zip
 
-            echo "🐳 Building new Docker image from source..."
-            docker build -t ${{ env.APP_NAME }} .
+            echo "🐳 Building new Docker image from source..."
+            docker build -t ${{ env.APP_NAME }} .
 
-            echo "🛑 Stopping and removing old container..."
-            docker stop ${{ env.APP_NAME }} || true
-            docker rm ${{ env.APP_NAME }} || true
+            echo "🛑 Stopping and removing old container..."
+            docker stop ${{ env.APP_NAME }} || true
+            docker rm ${{ env.APP_NAME }} || true
 
-            echo "▶️ Running new container..."
-            docker run -d \
-              -p 6736:6736 \
-              --name ${{ env.APP_NAME }} \
-              -v /data/storage:/files \
-              -e SPRING_PROFILES_ACTIVE=main \
-              -e APP_STORAGE_SECRET_KEY="${{ secrets.APP_STORAGE_SECRET_KEY }}" \
-              -e APP_STORAGE_UPLOAD_DIR=/files \
-              ${{ env.APP_NAME }}
-            
-            echo "🎉 Deployment successful!"
+            echo "▶️ Running new container..."
+            docker run -d \
+              -p 6736:6736 \
+              --name ${{ env.APP_NAME }} \
+              -v ${{ secrets.MAIN_STORAGE_BASE }}:/files \  # <--- 이 부분이 수정되었습니다
+              -e SPRING_PROFILES_ACTIVE=main \
+              -e APP_STORAGE_SECRET_KEY="${{ secrets.APP_STORAGE_SECRET_KEY }}" \
+              -e APP_STORAGE_UPLOAD_DIR=/files \
+              ${{ env.APP_NAME }}
+            
+            echo "🎉 Deployment successful!"
