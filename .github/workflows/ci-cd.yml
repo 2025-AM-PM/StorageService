@@ -1,7 +1,7 @@
 # 워크플로우 이름
-name: ampm-storage CI/CD
+name: ampm-storage CI/CD (Production)
 
-# 워크플로우 실행 조건
+# 워크플로우 실행 조건 (main 브랜치)
 on:
   pull_request:
     branches: [ "main" ]
@@ -11,14 +11,14 @@ on:
 # 워크플로우 전체에서 사용할 환경 변수
 env:
   JAVA_VERSION: '21'
-  APP_NAME: ampm-storage
+  APP_NAME: ampm-storage # 🚨 프로덕션 앱 이름
 
 jobs:
-  # ==================================================
+  # =======================================================
   # 1. CI Job (main 브랜치로의 Pull Request 시 실행)
-  # ==================================================
+  # =======================================================
   ci:
-    name: Continuous Integration
+    name: Continuous Integration (Production)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -35,26 +35,27 @@ jobs:
       - name: Build and Test with Gradle
         run: ./gradlew build
 
-  # ========================================================================
+  # =========================================================================
   # 2. CD Job (main 브랜치에 Push(Merge) 시 실행)
-  # ========================================================================
+  # =========================================================================
   cd:
-    name: Continuous Deployment
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Continuous Deployment (Production)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # 🚨 실행 브랜치: main
     runs-on: ubuntu-latest
     steps:
       # (1) 소스 코드 가져오기
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # (2) 배포할 소스 코드를 zip 파일로 압축 (불필요한 .git, .github 폴더 제외)
+      # (2) 배포할 소스 코드를 zip 파일로 압축 (최적화)
       - name: Archive source code
         run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
       # (3) 압축된 소스 코드를 서버로 복사 (SCP)
-      - name: Copy source code to server
+      - name: Copy source code to Production server
         uses: appleboy/scp-action@v0.1.4
         with:
+          # 🚨 프로덕션 서버용 Secret 사용
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
@@ -62,16 +63,17 @@ jobs:
           source: "source.zip"
           target: /home/${{ secrets.DEPLOY_USER }}/app/
 
-      # (4) Secret을 GitHub Actions 환경 변수로 설정 (✅ 새 스텝)
+      # (4) Secret을 GitHub Actions 환경 변수로 설정 (✅ 안전한 방식)
       - name: Set secrets as environment variables
         run: |
           echo "SECRET_KEY=${{ secrets.APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
           echo "STORAGE_PATH=${{ secrets.MAIN_STORAGE_BASE }}" >> $GITHUB_ENV
 
-      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 수정된 스텝)
-      - name: Deploy on server via SSH
+      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 안전한 방식)
+      - name: Deploy on Production server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
+          # 🚨 프로덕션 서버용 Secret 사용
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
@@ -79,7 +81,7 @@ jobs:
           envs: SECRET_KEY,STORAGE_PATH  # <-- (A) 전달할 환경 변수 목록
           script: |
             set -euo pipefail
-            echo "🚀 Starting deployment on server..."
+            echo "🚀 Starting deployment on Production server..."
             
             # 타겟 디렉토리로 이동
             cd /home/${{ secrets.DEPLOY_USER }}/app/
@@ -97,12 +99,12 @@ jobs:
 
             echo "▶️ Running new container..."
             docker run -d \
-              -p 6736:6736 \
+              -p 6736:6736 \ # 🚨 프로덕션 포트
               --name ${{ env.APP_NAME }} \
-              -v "$STORAGE_PATH:/files" \          # <-- (B) $변수로 사용
-              -e SPRING_PROFILES_ACTIVE=main \
-              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \  # <-- (B) $변수로 사용
+              -v "$STORAGE_PATH:/files" \          # <-- (B) $변수로 안전하게 사용
+              -e SPRING_PROFILES_ACTIVE=main \ # 🚨 프로덕션 프로필
+              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \  # <-- (B) $변수로 안전하게 사용
               -e APP_STORAGE_UPLOAD_DIR=/files \
               ${{ env.APP_NAME }}
             
-            echo "🎉 Deployment successful!"
+            echo "🎉 Production Deployment successful!"
