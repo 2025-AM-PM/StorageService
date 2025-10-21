@@ -67,7 +67,7 @@ jobs:
       # (4) Secret을 GitHub Actions 환경 변수로 설정
       - name: Set secrets as environment variables
         run: |
-          echo "SECRET_KEY=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "SECRET_KEY=${{ secrets.TEST_APP_storage_SECRET_KEY }}" >> $GITHUB_ENV
           echo "STORAGE_PATH=${{ secrets.TEST_STORAGE_BASE }}" >> $GITHUB_ENV
 
       # (5) 서버에 접속하여 배포 실행 (SSH)
@@ -109,8 +109,8 @@ jobs:
               --name ${{ env.APP_NAME }} \
               -v "$STORAGE_PATH:/files" \
               -e SPRING_PROFILES_ACTIVE=test \
-              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
-              -e APP_STORAGE_UPLOAD_DIR=/files \
+              -e APP_storage_SECRET_KEY="$SECRET_KEY" \
+              -e APP_storage_UPLOAD_DIR=/files \
               ${{ env.APP_NAME }}
             
             echo "🎉 TEST Deployment successful!"
