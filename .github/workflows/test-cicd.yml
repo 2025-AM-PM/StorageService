@@ -61,7 +61,7 @@ jobs:
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.TEST_DEPLOY_PORT }}
           source: "source.zip"
-          target: ${{ secrets.TEST_STORAGE_BASE }}/
+          target: ${{ secrets.TEST_STORAGE_BASE }}/ # <--- ✅ 수정됨
           rm: true
 
       # (4) Secret을 GitHub Actions 환경 변수로 설정
@@ -74,13 +74,12 @@ jobs:
       - name: Deploy on TEST server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # --- ⚠️ 이 부분들이 누락되지 않아야 합니다 ---
+          # 🚨 테스트 서버용 Secret 사용
           host: ${{ secrets.TEST_DEPLOY_HOST }}
           username: ${{ secrets.TEST_DEPLOY_USER }}
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.TEST_DEPLOY_PORT }}
-          # -----------------------------------------------
-
+          
           envs: SECRET_KEY,STORAGE_PATH
           script: |
             set -euo pipefail
