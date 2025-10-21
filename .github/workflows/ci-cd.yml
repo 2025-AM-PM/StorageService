@@ -51,7 +51,7 @@ jobs:
       - name: Archive source code
         run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
-      # (3) 압축된 소스 코드를 서버로 복사 (SCP)
+      # (3) 압축된 소스 코드를 서버로 복사 (SCP) (✅ 수정됨)
       - name: Copy source code to Production server
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -61,47 +61,52 @@ jobs:
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT }}
           source: "source.zip"
-          target: /home/${{ secrets.DEPLOY_USER }}/app/
+          target: ${{ secrets.MAIN_STORAGE_BASE }}/ # <-- source.zip을 이 폴더 *안*에 복사
+          rm: true # <-- 서버에 복사 후 로컬 source.zip 삭제 (옵션)
 
-      # (4) Secret을 GitHub Actions 환경 변수로 설정 (✅ 안전한 방식)
+      # (4) Secret을 GitHub Actions 환경 변수로 설정
       - name: Set secrets as environment variables
         run: |
           echo "SECRET_KEY=${{ secrets.APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
           echo "STORAGE_PATH=${{ secrets.MAIN_STORAGE_BASE }}" >> $GITHUB_ENV
 
-      # (5) 서버에 접속하여 배포 실행 (SSH)
+      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 수정됨)
       - name: Deploy on Production server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
+          # 🚨 프로덕션 서버용 Secret 사용
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT }}
-          envs: SECRET_KEY,STORAGE_PATH  
+          envs: SECRET_KEY,STORAGE_PATH
           script: |
             set -euo pipefail
-            echo "🚀 Starting deployment on Production server..."
             
-            # 타겟 디렉토리로 이동
-            cd /home/${{ secrets.DEPLOY_USER }}/app/
+            # (A) 타겟 디렉토리(STORAGE_PATH)로 이동
+            echo "🚀 Starting deployment in $STORAGE_PATH..."
+            cd $STORAGE_PATH
 
+            # (B) 소스 코드 압축 해제 (같은 위치)
             echo "📦 Unzipping source code..."
             unzip -o source.zip
             rm source.zip
 
+            # (C) Docker 이미지 빌드 (같은 위치)
             echo "🐳 Building new Docker image from source..."
             docker build -t ${{ env.APP_NAME }} .
 
+            # (D) 기존 컨테이너 중지/삭제
             echo "🛑 Stopping and removing old container..."
             docker stop ${{ env.APP_NAME }} || true
             docker rm ${{ env.APP_NAME }} || true
 
+            # (E) 새 컨테이너 실행 (같은 위치를 볼륨으로 마운트)
             echo "▶️ Running new container..."
-            # 명령어 블록 내부의 주석을 모두 제거해야 합니다.
             docker run -d \
               -p 6736:6736 \
               --name ${{ env.APP_NAME }} \
-              -v "$STORAGE_PATH:/files" \
+              -v "$STORAGE_PATH:/files" \ # <-- 배포 위치와 데이터 위치 동일
               -e SPRING_PROFILES_ACTIVE=main \
               -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
