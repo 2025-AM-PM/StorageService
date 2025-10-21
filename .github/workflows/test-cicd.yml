@@ -11,7 +11,7 @@ on:
 # 워크플로우 전체에서 사용할 환경 변수
 env:
   JAVA_VERSION: '21'
-  APP_NAME: ampm-storage-test # 🚨 프로덕션 컨테이너와 이름 충돌 방지
+  APP_NAME: ampm-storage-test # 🚨 테스트 앱 이름
 
 jobs:
   # =======================================================
@@ -40,16 +40,16 @@ jobs:
   # =========================================================================
   cd:
     name: Continuous Deployment (Test)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' # 🚨 실행 브랜치 변경
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' # 🚨 실행 브랜치: develop
     runs-on: ubuntu-latest
     steps:
       # (1) 소스 코드 가져오기
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # (2) 배포할 소스 코드를 zip 파일로 압축
+      # (2) 배포할 소스 코드를 zip 파일로 압축 (최적화)
       - name: Archive source code
-        run: zip -r source.zip .
+        run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
       # (3) 압축된 소스 코드를 서버로 복사 (SCP)
       - name: Copy source code to TEST server
@@ -61,42 +61,56 @@ jobs:
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.TEST_DEPLOY_PORT }}
           source: "source.zip"
-          target: /home/${{ secrets.TEST_DEPLOY_USER }}/app/
+          target: ${{ secrets.TEST_STORAGE_BASE }}/
+          rm: true
 
-      # (4) 서버에 접속하여 배포 실행 (SSH)
+      # (4) Secret을 GitHub Actions 환경 변수로 설정
+      - name: Set secrets as environment variables
+        run: |
+          echo "SECRET_KEY=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "STORAGE_PATH=${{ secrets.TEST_STORAGE_BASE }}" >> $GITHUB_ENV
+
+      # (5) 서버에 접속하여 배포 실행 (SSH)
       - name: Deploy on TEST server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # 🚨 테스트 서버용 Secret 사용
+          # --- ⚠️ 이 부분들이 누락되지 않아야 합니다 ---
           host: ${{ secrets.TEST_DEPLOY_HOST }}
           username: ${{ secrets.TEST_DEPLOY_USER }}
           password: ${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.TEST_DEPLOY_PORT }}
+          # -----------------------------------------------
+
+          envs: SECRET_KEY,STORAGE_PATH
           script: |
             set -euo pipefail
-            echo "🚀 Starting deployment on TEST server..."
             
-            # 타겟 디렉토리로 이동
-            cd /home/${{ secrets.TEST_DEPLOY_USER }}/app/
+            # (A) 타겟 디렉토리(STORAGE_PATH)로 이동
+            echo "🚀 Starting deployment in $STORAGE_PATH..."
+            cd $STORAGE_PATH
 
+            # (B) 소스 코드 압축 해제 (같은 위치)
             echo "📦 Unzipping source code..."
             unzip -o source.zip
             rm source.zip
 
+            # (C) Docker 이미지 빌드 (같은 위치)
             echo "🐳 Building new Docker image from source..."
             docker build -t ${{ env.APP_NAME }} .
 
+            # (D) 기존 컨테이너 중지/삭제
             echo "🛑 Stopping and removing old container..."
             docker stop ${{ env.APP_NAME }} || true
             docker rm ${{ env.APP_NAME }} || true
 
+            # (E) 새 컨테이너 실행 (주석 제거됨)
             echo "▶️ Running new container..."
             docker run -d \
-              -p 6737:6736 \ # 🚨 포트 충돌 방지를 위해 외부 포트 변경
+              -p 6737:6736 \
               --name ${{ env.APP_NAME }} \
-              -v /data/storage_test:/files \ # 🚨 필요 시 테스트용 볼륨 경로 지정
-              -e SPRING_PROFILES_ACTIVE=test \ # 🚨 테스트용 프로필 활성화
-              -e APP_STORAGE_SECRET_KEY="${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}" \ # 🚨 테스트용 Secret Key 사용
+              -v "$STORAGE_PATH:/files" \
+              -e SPRING_PROFILES_ACTIVE=test \
+              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
               ${{ env.APP_NAME }}
             
