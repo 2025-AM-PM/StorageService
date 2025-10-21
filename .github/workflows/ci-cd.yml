@@ -70,15 +70,11 @@ jobs:
           echo "SECRET_KEY=${{ secrets.APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
           echo "STORAGE_PATH=${{ secrets.MAIN_STORAGE_BASE }}" >> $GITHUB_ENV
 
-      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 수정됨)
+      # (5) 서버에 접속하여 배포 실행 (SSH)
       - name: Deploy on Production server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # 🚨 프로덕션 서버용 Secret 사용
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
+          # ... (host, username, password, port)
           envs: SECRET_KEY,STORAGE_PATH
           script: |
             set -euo pipefail
@@ -101,12 +97,12 @@ jobs:
             docker stop ${{ env.APP_NAME }} || true
             docker rm ${{ env.APP_NAME }} || true
 
-            # (E) 새 컨테이너 실행 (같은 위치를 볼륨으로 마운트)
+            # (E) 새 컨테이너 실행 (✅ 주석 제거됨)
             echo "▶️ Running new container..."
             docker run -d \
               -p 6736:6736 \
               --name ${{ env.APP_NAME }} \
-              -v "$STORAGE_PATH:/files" \ # <-- 배포 위치와 데이터 위치 동일
+              -v "$STORAGE_PATH:/files" \
               -e SPRING_PROFILES_ACTIVE=main \
               -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
