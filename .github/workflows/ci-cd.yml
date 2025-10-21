@@ -51,7 +51,7 @@ jobs:
       - name: Archive source code
         run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
-      # (3) 압축된 소스 코드를 서버로 복사 (SCP) (✅ 수정됨)
+      # (3) 압축된 소스 코드를 서버로 복사 (SCP)
       - name: Copy source code to Production server
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -61,8 +61,8 @@ jobs:
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT }}
           source: "source.zip"
-          target: ${{ secrets.MAIN_STORAGE_BASE }}/ # <-- source.zip을 이 폴더 *안*에 복사
-          rm: true # <-- 서버에 복사 후 로컬 source.zip 삭제 (옵션)
+          target: ${{ secrets.MAIN_STORAGE_BASE }}/ 
+          rm: true 
 
       # (4) Secret을 GitHub Actions 환경 변수로 설정
       - name: Set secrets as environment variables
@@ -70,11 +70,17 @@ jobs:
           echo "SECRET_KEY=${{ secrets.APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
           echo "STORAGE_PATH=${{ secrets.MAIN_STORAGE_BASE }}" >> $GITHUB_ENV
 
-      # (5) 서버에 접속하여 배포 실행 (SSH)
+      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 수정됨)
       - name: Deploy on Production server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # ... (host, username, password, port)
+          # --- ⚠️ 이 부분들이 누락되지 않아야 합니다 ---
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          # -----------------------------------------------
+          
           envs: SECRET_KEY,STORAGE_PATH
           script: |
             set -euo pipefail
@@ -97,7 +103,7 @@ jobs:
             docker stop ${{ env.APP_NAME }} || true
             docker rm ${{ env.APP_NAME }} || true
 
-            # (E) 새 컨테이너 실행 (✅ 주석 제거됨)
+            # (E) 새 컨테이너 실행 (주석 제거됨)
             echo "▶️ Running new container..."
             docker run -d \
               -p 6736:6736 \
