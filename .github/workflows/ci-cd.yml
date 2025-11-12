@@ -62,7 +62,6 @@ jobs:
         run: ./gradlew clean bootJar -x test
 
       # (5) 배포할 아티팩트 준비 (app.jar)
-      # Dockerfile이 'COPY app.jar ...'를 사용하므로 이름을 'app.jar'로 변경
       - name: Prepare artifact for deployment
         shell: bash
         run: |
@@ -75,11 +74,7 @@ jobs:
         shell: bash
         run: |
           BRANCH="${GITHUB_REF##*/}"
-          # Dockerfile의 'EXPOSE 6736'이 컨테이너 내부 포트
           INTERNAL_PORT=6736
-          
-          # application.properties의 'app.storage.upload-dir: files'와
-          # Dockerfile의 'WORKDIR /app'를 조합한 컨테이너 내부 경로
           INTERNAL_UPLOAD_DIR="/app/files"
 
           if [ "$BRANCH" = "main" ]; then
@@ -90,12 +85,11 @@ jobs:
               echo "USER=${{ secrets.DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.DEPLOY_PORT }}"
-              echo "DIR=~/ampm-storage" # 앱 배포 디렉터리 (app.jar, Dockerfile, .env 위치)
-              echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}" # 실제 파일 저장(볼륨) 디렉터리
-              echo "APP_PORT=6736" # 외부 노출 포트
+              echo "DIR=~/ampm-storage"
+              echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}"
+              echo "APP_PORT=6736"
               echo "APP_STORAGE_SECRET=${{ secrets.MAIN_APP_STORAGE_SECRET_KEY }}"
           
-              # .env 파일에 작성될 값들
               echo "ENV_SPRING_APP_NAME=AmpmStorage"
               echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
               echo "ENV_UPLOAD_DIR=$INTERNAL_UPLOAD_DIR"
@@ -110,12 +104,11 @@ jobs:
               echo "USER=${{ secrets.TEST_DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.TEST_DEPLOY_PORT }}"
-              echo "DIR=~/ampm-storage-test" # 앱 배포 디렉터리
-              echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}" # 실제 파일 저장(볼륨) 디렉터리
-              echo "APP_PORT=6737" # 외부 노출 포트 (내부 6736과 다름)
+              echo "DIR=~/ampm-storage-test"
+              echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}"
+              echo "APP_PORT=6737"
               echo "APP_STORAGE_SECRET=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}"
           
-              # .env 파일에 작성될 값들
               echo "ENV_SPRING_APP_NAME=AmpmStorage-Test"
               echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
               echo "ENV_UPLOAD_DIR=$INTERNAL_UPLOAD_DIR"
@@ -124,7 +117,7 @@ jobs:
             } >> $GITHUB_ENV
           fi
 
-      # (7) 원격 서버에 디렉터리 생성 (앱 디렉터리 + 볼륨 디렉터리)
+      # (7) 원격 서버에 디렉터리 생성
       - name: Make remote dirs
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -155,8 +148,6 @@ jobs:
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
-
-          # Pick environment에서 설정한 모든 변수들을 SSH 세션으로 전달
           envs: |
             APP_NAME, PROFILE, DIR, STORAGE_BASE, APP_PORT, 
             APP_STORAGE_SECRET, ENV_SPRING_APP_NAME, 
@@ -170,34 +161,26 @@ jobs:
             echo "🚀 Starting deployment in $DIR..."
             cd $DIR
 
+            # [ ******** 디버깅 라인 추가 ******** ]
+            echo "--- Verifying files in $DIR (before build) ---"
+            ls -l
+            echo "----------------------------------------------"
+            # [ ********************************* ]
+            
             # (B) .env 파일 생성
-            # Dockerfile의 'ENV TZ'와 'EXPOSE'는 .env 파일로 대체/통일
             echo "Writing .env file..."
             cat > .env <<EOF
-            # Dockerfile의 'ENV TZ=Asia/Seoul'
             TZ=$TZ
-            
-            # Spring 프로필
             SPRING_PROFILES_ACTIVE=$PROFILE
-            
-            # Dockerfile의 'EXPOSE 6736' (application.properties의 'server.port')
             SERVER_PORT=$ENV_INTERNAL_PORT
-            
-            # application.properties의 'spring.application.name'
             SPRING_APPLICATION_NAME=$ENV_SPRING_APP_NAME
-            
-            # application.properties의 'app.storage.secret-key'
             APP_STORAGE_SECRET_KEY=$APP_STORAGE_SECRET
-            
-            # application.properties의 'app.storage.upload-dir'
             APP_STORAGE_UPLOAD_DIR=$ENV_UPLOAD_DIR
-            
-            # application.properties의 multipart 설정
             SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=$ENV_MAX_FILE_SIZE
             SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=$ENV_MAX_REQ_SIZE
             EOF
 
-            # (C) Docker 이미지 빌드 (서버에서 app.jar와 Dockerfile 사용)
+            # (C) Docker 이미지 빌드
             echo "🐳 Building new Docker image: $APP_NAME"
             docker build -t $APP_NAME .
 
@@ -206,7 +189,7 @@ jobs:
             docker stop $APP_NAME || true
             docker rm $APP_NAME || true
 
-            # (E) 새 컨테이너 실행 (볼륨 및 .env 파일 사용)
+            # (E) 새 컨테이너 실행
             echo "▶️ Running new container: $APP_NAME"
             docker run -d \
               --name $APP_NAME \
