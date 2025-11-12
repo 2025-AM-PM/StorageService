@@ -34,7 +34,7 @@ jobs:
         run: ./gradlew build
 
   # =========================================================================
-  # 2. CD Job (Push(Merge) 시 실행) - 수동 tar/untar 방식으로 변경
+  # 2. CD Job (Push(Merge) 시 실행) - 복사 스텝 분리 및 경로 수정
   # =========================================================================
   cd:
     name: Continuous Deployment
@@ -85,7 +85,7 @@ jobs:
               echo "USER=${{ secrets.DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.DEPLOY_PORT }}"
-              echo "DIR=~/ampm-storage"
+              echo "DIR=ampm-storage" # <-- [수정] Tilde(~) 제거
               echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}"
               echo "APP_PORT=6736"
               echo "APP_STORAGE_SECRET=${{ secrets.MAIN_APP_STORAGE_SECRET_KEY }}"
@@ -104,7 +104,7 @@ jobs:
               echo "USER=${{ secrets.TEST_DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.TEST_DEPLOY_PORT }}"
-              echo "DIR=~/ampm-storage-test"
+              echo "DIR=ampm-storage-test" # <-- [수정] Tilde(~) 제거
               echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}"
               echo "APP_PORT=6737"
               echo "APP_STORAGE_SECRET=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}"
@@ -117,7 +117,7 @@ jobs:
             } >> $GITHUB_ENV
           fi
 
-      # (7) 원격 서버에 디렉터리 생성
+      # (7) 원격 서버에 디렉터리 생성 (SSH 스크립트에서 $HOME 사용)
       - name: Make remote dirs
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -126,30 +126,41 @@ jobs:
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
           script: |
-            mkdir -p "${{ env.DIR }}"
+            # [수정] $HOME 변수를 사용하여 절대 경로 보장
+            mkdir -p "$HOME/${{ env.DIR }}"
             mkdir -p "${{ env.STORAGE_BASE }}"
 
-      # [ ******** (8)번 스텝 신규: 수동으로 tar 압축 ******** ]
-      - name: Create tarball
+      # (8) 복사 전 GitHub Runner의 파일 목록 확인 (디버깅)
+      - name: Check files in runner workspace
         shell: bash
         run: |
-          echo "--- Creating deploy.tar.gz ---"
-          tar -czf deploy.tar.gz app.jar Dockerfile
-          ls -l deploy.tar.gz
-          echo "------------------------------"
+          echo "--- Verifying files in GitHub runner (before copy) ---"
+          ls -l
+          echo "------------------------------------------------------"
 
-      # [ ******** (9)번 스텝 수정: tarball 1개만 복사 ******** ]
-      - name: Copy tarball to server
+      # [ ******** (9)번 스텝 수정: 두 개로 분리 ******** ]
+      - name: Copy app.jar to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
-          source: "deploy.tar.gz" # 압축 파일 1개만 복사
-          target: "${{ env.DIR }}/"
+          source: "app.jar"
+          target: "$HOME/${{ env.DIR }}/" # [수정] $HOME 변수 사용
 
-      # [ ******** (10)번 스텝 수정: 수동으로 tar 압축 해제 ******** ]
+      - name: Copy Dockerfile to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          source: "Dockerfile"
+          target: "$HOME/${{ env.DIR }}/" # [수정] $HOME 변수 사용
+      # [ *********************************************** ]
+
+      # (10) 서버에서 .env 생성 및 도커 실행
       - name: Deploy on server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -166,22 +177,17 @@ jobs:
           script: |
             set -euo pipefail
             
-            # (A) 앱 디렉토리(DIR)로 이동
-            echo "🚀 Starting deployment in $DIR..."
-            cd $DIR
-            
-            # (B) [신규] 압축 해제
-            echo "--- Extracting deploy.tar.gz ---"
-            tar -xzf deploy.tar.gz
-            rm deploy.tar.gz # 압축 파일 삭제
-            echo "--------------------------------"
+            # (A) 앱 디렉토리(DIR)로 이동 (SSH 세션에서 $HOME 확장)
+            echo "🚀 Starting deployment in $HOME/$DIR..."
+            cd "$HOME/$DIR"
 
-            # (C) 원격 서버의 파일 목록 확인 (디버깅)
-            echo "--- Verifying files in $DIR (before build) ---"
+            # (B) 원격 서버의 파일 목록 확인 (디버깅)
+            echo "--- Verifying files in $HOME/$DIR (before build) ---"
+            pwd
             ls -l
             echo "----------------------------------------------"
             
-            # (D) .env 파일 생성
+            # (C) .env 파일 생성
             echo "Writing .env file..."
             cat > .env <<EOF
             TZ=$TZ
@@ -194,16 +200,16 @@ jobs:
             SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=$ENV_MAX_REQ_SIZE
             EOF
 
-            # (E) Docker 이미지 빌드
+            # (D) Docker 이미지 빌드
             echo "🐳 Building new Docker image: $APP_NAME"
             docker build -t $APP_NAME .
 
-            # (F) 기존 컨테이너 중지/삭제
+            # (E) 기존 컨테이너 중지/삭제
             echo "🛑 Stopping and removing old container: $APP_NAME"
             docker stop $APP_NAME || true
             docker rm $APP_NAME || true
 
-            # (G) 새 컨테이너 실행
+            # (F) 새 컨테이너 실행
             echo "▶️ Running new container: $APP_NAME"
             docker run -d \
               --name $APP_NAME \
