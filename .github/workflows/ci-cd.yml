@@ -34,7 +34,7 @@ jobs:
         run: ./gradlew build
 
   # =========================================================================
-  # 2. CD Job (Push(Merge) 시 실행) - 디버깅 스텝 추가
+  # 2. CD Job (Push(Merge) 시 실행) - 복사 스텝 분리
   # =========================================================================
   cd:
     name: Continuous Deployment
@@ -137,16 +137,27 @@ jobs:
           ls -l
           echo "------------------------------------------------------"
 
-      # (9) app.jar와 Dockerfile만 서버로 복사
-      - name: Copy app.jar & Dockerfile to server
+      # [ ******** (9)번 스텝 수정: 두 개로 분리 ******** ]
+      - name: Copy app.jar to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
-          source: "app.jar,Dockerfile"
+          source: "app.jar"
           target: "${{ env.DIR }}/"
+
+      - name: Copy Dockerfile to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          source: "Dockerfile"
+          target: "${{ env.DIR }}/"
+      # [ *********************************************** ]
 
       # (10) 서버에서 .env 생성 및 도커 실행
       - name: Deploy on server via SSH
