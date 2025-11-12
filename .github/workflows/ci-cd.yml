@@ -1,20 +1,19 @@
 # .github/workflows/storage-ci-cd.yml
-name: ampm-storage CI/CD (Unified)
+name: ampm-storage CI/CD (Dockerfile-based)
 
-# 워크플로우 실행 조건 (main과 develop 브랜치)
 on:
   pull_request:
     branches: [ "main", "develop" ]
   push:
     branches: [ "main", "develop" ]
 
-# 워크플로우 전체에서 사용할 환경 변수
 env:
   JAVA_VERSION: '21'
+  TZ: 'Asia/Seoul'
 
 jobs:
   # =======================================================
-  # 1. CI Job (main/develop 브랜치로의 Pull Request 시 실행)
+  # 1. CI Job (Pull Request 시 실행) - 변경 없음
   # =======================================================
   ci:
     name: Continuous Integration
@@ -35,11 +34,10 @@ jobs:
         run: ./gradlew build
 
   # =========================================================================
-  # 2. CD Job (main/develop 브랜치에 Push(Merge) 시 실행)
+  # 2. CD Job (Push(Merge) 시 실행) - Dockerfile 기준 수정
   # =========================================================================
   cd:
     name: Continuous Deployment
-    # PUSH 이벤트이면서, main 또는 develop 브랜치일 때만 실행
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     steps:
@@ -47,15 +45,43 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # (2) 배포할 소스 코드를 zip 파일로 압축 (최적화)
-      - name: Archive source code
-        run: zip -r source.zip . -x ".git/*" -x ".github/*"
+      # (2) JDK 21 설정
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'gradle'
 
-      # (3) [수정] 브랜치에 따라 환경 변수 선택
+      # (3) Gradle 실행 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # (4) Gradle 빌드 (jar 파일 생성)
+      - name: Build jar (skip tests)
+        run: ./gradlew clean bootJar -x test
+
+      # (5) 배포할 아티팩트 준비 (app.jar)
+      # Dockerfile이 'COPY app.jar ...'를 사용하므로 이름을 'app.jar'로 변경
+      - name: Prepare artifact for deployment
+        shell: bash
+        run: |
+          JAR=$(find . -type f -path "*/build/libs/*.jar" | head -n 1)
+          cp "$JAR" app.jar
+          echo "Copied $JAR to app.jar"
+
+      # (6) 브랜치에 따라 환경 변수 선택
       - name: Pick environment
         shell: bash
         run: |
           BRANCH="${GITHUB_REF##*/}"
+          # Dockerfile의 'EXPOSE 6736'이 컨테이너 내부 포트
+          INTERNAL_PORT=6736
+          
+          # application.properties의 'app.storage.upload-dir: files'와
+          # Dockerfile의 'WORKDIR /app'를 조합한 컨테이너 내부 경로
+          INTERNAL_UPLOAD_DIR="/app/files"
+
           if [ "$BRANCH" = "main" ]; then
             {
               echo "APP_NAME=ampm-storage"
@@ -64,9 +90,17 @@ jobs:
               echo "USER=${{ secrets.DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.DEPLOY_PORT }}"
-              echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}"
-              echo "APP_PORT=6736"
+              echo "DIR=~/ampm-storage" # 앱 배포 디렉터리 (app.jar, Dockerfile, .env 위치)
+              echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}" # 실제 파일 저장(볼륨) 디렉터리
+              echo "APP_PORT=6736" # 외부 노출 포트
               echo "APP_STORAGE_SECRET=${{ secrets.MAIN_APP_STORAGE_SECRET_KEY }}"
+          
+              # .env 파일에 작성될 값들
+              echo "ENV_SPRING_APP_NAME=AmpmStorage"
+              echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
+              echo "ENV_UPLOAD_DIR=$INTERNAL_UPLOAD_DIR"
+              echo "ENV_MAX_FILE_SIZE=10MB"
+              echo "ENV_MAX_REQ_SIZE=10MB"
             } >> $GITHUB_ENV
           elif [ "$BRANCH" = "develop" ]; then
             {
@@ -76,25 +110,44 @@ jobs:
               echo "USER=${{ secrets.TEST_DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.TEST_DEPLOY_PORT }}"
-              echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}"
-              echo "APP_PORT=6737"
+              echo "DIR=~/ampm-storage-test" # 앱 배포 디렉터리
+              echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}" # 실제 파일 저장(볼륨) 디렉터리
+              echo "APP_PORT=6737" # 외부 노출 포트 (내부 6736과 다름)
               echo "APP_STORAGE_SECRET=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}"
+          
+              # .env 파일에 작성될 값들
+              echo "ENV_SPRING_APP_NAME=AmpmStorage-Test"
+              echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
+              echo "ENV_UPLOAD_DIR=$INTERNAL_UPLOAD_DIR"
+              echo "ENV_MAX_FILE_SIZE=10MB"
+              echo "ENV_MAX_REQ_SIZE=10MB"
             } >> $GITHUB_ENV
           fi
 
-      # (4) [수정] 압축된 소스 코드를 서버로 복사 (변수 사용)
-      - name: Copy source code to server
-        uses: appleboy/scp-action@v0.1.4
+      # (7) 원격 서버에 디렉터리 생성 (앱 디렉터리 + 볼륨 디렉터리)
+      - name: Make remote dirs
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
-          source: "source.zip"
-          target: ${{ env.STORAGE_BASE }}/
-          rm: true
+          script: |
+            mkdir -p "${{ env.DIR }}"
+            mkdir -p "${{ env.STORAGE_BASE }}"
 
-      # (5) [수정] 서버에 접속하여 배포 실행 (변수 사용)
+      # (8) app.jar와 Dockerfile만 서버로 복사
+      - name: Copy app.jar & Dockerfile to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          source: "app.jar,Dockerfile"
+          target: "${{ env.DIR }}/"
+
+      # (9) 서버에서 .env 생성 및 도커 실행
       - name: Deploy on server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -103,39 +156,64 @@ jobs:
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
 
-          # Pick environment에서 설정한 변수들을 SSH 세션으로 전달
-          envs: APP_NAME, PROFILE, STORAGE_BASE, APP_PORT, APP_STORAGE_SECRET
+          # Pick environment에서 설정한 모든 변수들을 SSH 세션으로 전달
+          envs: |
+            APP_NAME, PROFILE, DIR, STORAGE_BASE, APP_PORT, 
+            APP_STORAGE_SECRET, ENV_SPRING_APP_NAME, 
+            ENV_INTERNAL_PORT, ENV_UPLOAD_DIR, 
+            ENV_MAX_FILE_SIZE, ENV_MAX_REQ_SIZE, TZ
 
           script: |
             set -euo pipefail
             
-            # (A) 타겟 디렉토리(STORAGE_BASE)로 이동
-            echo "🚀 Starting deployment in $STORAGE_BASE..."
-            cd $STORAGE_BASE
+            # (A) 앱 디렉토리(DIR)로 이동
+            echo "🚀 Starting deployment in $DIR..."
+            cd $DIR
 
-            # (B) 소스 코드 압축 해제 (같은 위치)
-            echo "📦 Unzipping source code..."
-            unzip -o source.zip
-            rm source.zip
+            # (B) .env 파일 생성
+            # Dockerfile의 'ENV TZ'와 'EXPOSE'는 .env 파일로 대체/통일
+            echo "Writing .env file..."
+            cat > .env <<EOF
+            # Dockerfile의 'ENV TZ=Asia/Seoul'
+            TZ=$TZ
+            
+            # Spring 프로필
+            SPRING_PROFILES_ACTIVE=$PROFILE
+            
+            # Dockerfile의 'EXPOSE 6736' (application.properties의 'server.port')
+            SERVER_PORT=$ENV_INTERNAL_PORT
+            
+            # application.properties의 'spring.application.name'
+            SPRING_APPLICATION_NAME=$ENV_SPRING_APP_NAME
+            
+            # application.properties의 'app.storage.secret-key'
+            APP_STORAGE_SECRET_KEY=$APP_STORAGE_SECRET
+            
+            # application.properties의 'app.storage.upload-dir'
+            APP_STORAGE_UPLOAD_DIR=$ENV_UPLOAD_DIR
+            
+            # application.properties의 multipart 설정
+            SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=$ENV_MAX_FILE_SIZE
+            SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=$ENV_MAX_REQ_SIZE
+            EOF
 
-            # (C) Docker 이미지 빌드 (같은 위치)
-            echo "🐳 Building new Docker image from source..."
+            # (C) Docker 이미지 빌드 (서버에서 app.jar와 Dockerfile 사용)
+            echo "🐳 Building new Docker image: $APP_NAME"
             docker build -t $APP_NAME .
 
             # (D) 기존 컨테이너 중지/삭제
-            echo "🛑 Stopping and removing old container..."
+            echo "🛑 Stopping and removing old container: $APP_NAME"
             docker stop $APP_NAME || true
             docker rm $APP_NAME || true
 
-            # (E) 새 컨테이너 실행 (변수화됨)
-            echo "▶️ Running new container..."
+            # (E) 새 컨테이너 실행 (볼륨 및 .env 파일 사용)
+            echo "▶️ Running new container: $APP_NAME"
             docker run -d \
-              -p $APP_PORT:6736 \
               --name $APP_NAME \
-              -v "$STORAGE_BASE:/files" \
-              -e SPRING_PROFILES_ACTIVE=$PROFILE \
-              -e APP_STORAGE_SECRET_KEY="$APP_STORAGE_SECRET" \
-              -e APP_STORAGE_UPLOAD_DIR=/files \
-              $APP_NAME
+              --restart unless-stopped \
+              --env-file .env \
+              -p "$APP_PORT:$ENV_INTERNAL_PORT" \
+              -v "$STORAGE_BASE:$ENV_UPLOAD_DIR" \
+              $APP_NAME:latest
             
             echo "🎉 Deployment successful!"
