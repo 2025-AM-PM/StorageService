@@ -37,25 +37,62 @@ public class StorageController {
         }
     }
 
-    // ⭐️ [신규 추가] Presigned URL을 위한 원시 데이터(raw) PUT 업로드 메서드
-    @PutMapping("/exhibits/images/{userId}/{uuid}/{fileName}")
+//    // ⭐️ [신규 추가] Presigned URL을 위한 원시 데이터(raw) PUT 업로드 메서드
+//    @PutMapping(
+//            path = "/exhibits/images/{userId}/{uuid}/{fileName}",
+//            consumes = "image/*" // "image/jpeg", "image/png" 등 모든 이미지 타입을 처리
+//    )
+//    public ResponseEntity<String> handleRawFileUpload(
+//        @PathVariable String userId,
+//        @PathVariable String uuid,
+//        @PathVariable String fileName,
+//        HttpServletRequest request) { // MultipartFile 대신 HttpServletRequest를 사용
+//
+//        try {
+//            // 1. Presigned URL의 경로 구조에 맞춰 전체 파일 경로를 조합합니다.
+//            String relativePath = String.format("exhibits/images/%s/%s/%s", userId, uuid, fileName);
+//
+//            // 2. 파일을 저장할 절대 경로를 계산합니다.
+//            Path destinationFile = Paths.get(this.uploadDir).resolve(relativePath).normalize();
+//
+//            // 3. 상위 디렉터리가 없으면 생성합니다.
+//            Files.createDirectories(destinationFile.getParent());
+//
+//            // 4. 요청의 본문(body)으로부터 파일 데이터를 직접 읽어와 저장합니다.
+//            Files.copy(request.getInputStream(), destinationFile, StandardCopyOption.REPLACE_EXISTING);
+//
+//            System.out.println("Raw file saved to: " + destinationFile.toAbsolutePath());
+//            return ResponseEntity.ok("File uploaded successfully: " + relativePath);
+//
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 저장 중 오류가 발생했습니다.");
+//        }
+//    }
+
+    // 1. PutMapping 경로를 Presigned URL 생성 경로와 동일하게 수정합니다.
+    @PutMapping(
+            path = "/exhibits/images/{userId}/posts/{uuid}/image.png",
+            consumes = "image/*"
+    )
     public ResponseEntity<String> handleRawFileUpload(
-        @PathVariable String userId,
-        @PathVariable String uuid,
-        @PathVariable String fileName,
-        HttpServletRequest request) { // MultipartFile 대신 HttpServletRequest를 사용
+            @PathVariable String userId,
+            @PathVariable String uuid,
+            // @PathVariable String fileName, // "image.png"은 경로에 고정되었으므로 삭제
+            HttpServletRequest request) {
 
         try {
-            // 1. Presigned URL의 경로 구조에 맞춰 전체 파일 경로를 조합합니다.
-            String relativePath = String.format("exhibits/images/%s/%s/%s", userId, uuid, fileName);
+            // 2. 경로 변수를 기반으로 실제 저장 경로를 조합합니다.
+            // "fileName"이 "image.png"로 고정되었습니다.
+            String relativePath = String.format("exhibits/images/%s/posts/%s/image.png", userId, uuid);
 
-            // 2. 파일을 저장할 절대 경로를 계산합니다.
+            // 3. 파일을 저장할 절대 경로를 계산합니다.
             Path destinationFile = Paths.get(this.uploadDir).resolve(relativePath).normalize();
 
-            // 3. 상위 디렉터리가 없으면 생성합니다.
+            // 4. 상위 디렉터리가 없으면 생성합니다.
             Files.createDirectories(destinationFile.getParent());
 
-            // 4. 요청의 본문(body)으로부터 파일 데이터를 직접 읽어와 저장합니다.
+            // 5. 요청 본문에서 파일 저장
             Files.copy(request.getInputStream(), destinationFile, StandardCopyOption.REPLACE_EXISTING);
 
             System.out.println("Raw file saved to: " + destinationFile.toAbsolutePath());
@@ -149,7 +186,7 @@ public class StorageController {
 
         try {
             // 1. Presigned URL의 경로 구조에 맞춰 전체 파일 경로를 조합합니다.
-            String relativePath = String.format("exhibits/images/%s/%s/%s", userId, uuid, fileName);
+            String relativePath = String.format("exhibits/images/%s/posts/%s/%s", userId, uuid, fileName);
 
             // 2. 파일을 저장할 절대 경로를 계산합니다.
             Path filePath = this.fileStorageLocation.resolve(relativePath).normalize();
@@ -160,8 +197,8 @@ public class StorageController {
                 String retrievedFilename = filePath.getFileName().toString();
 
                 // 파일 이름이 "img"인 경우를 특별 처리하는 로직
-                if ("img".equals(retrievedFilename)) {
-                    contentType = "image/jpeg";
+                if ("image.png".equals(retrievedFilename)) {
+                    contentType = "image/png";
                 } else {
                     // 그 외의 경우, 파일 확장자를 통해 Content-Type을 추측
                     contentType = Files.probeContentType(filePath);
