@@ -34,7 +34,7 @@ jobs:
         run: ./gradlew build
 
   # =========================================================================
-  # 2. CD Job (Push(Merge) 시 실행) - 복사 스텝 분리
+  # 2. CD Job (Push(Merge) 시 실행) - 수동 tar/untar 방식으로 변경
   # =========================================================================
   cd:
     name: Continuous Deployment
@@ -129,37 +129,27 @@ jobs:
             mkdir -p "${{ env.DIR }}"
             mkdir -p "${{ env.STORAGE_BASE }}"
 
-      # (8) 복사 전 GitHub Runner의 파일 목록 확인 (디버깅)
-      - name: Check files in runner workspace
+      # [ ******** (8)번 스텝 신규: 수동으로 tar 압축 ******** ]
+      - name: Create tarball
         shell: bash
         run: |
-          echo "--- Verifying files in GitHub runner (before copy) ---"
-          ls -l
-          echo "------------------------------------------------------"
+          echo "--- Creating deploy.tar.gz ---"
+          tar -czf deploy.tar.gz app.jar Dockerfile
+          ls -l deploy.tar.gz
+          echo "------------------------------"
 
-      # [ ******** (9)번 스텝 수정: 두 개로 분리 ******** ]
-      - name: Copy app.jar to server
+      # [ ******** (9)번 스텝 수정: tarball 1개만 복사 ******** ]
+      - name: Copy tarball to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USER }}
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
-          source: "app.jar"
+          source: "deploy.tar.gz" # 압축 파일 1개만 복사
           target: "${{ env.DIR }}/"
 
-      - name: Copy Dockerfile to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.HOST }}
-          username: ${{ env.USER }}
-          password: ${{ env.PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          source: "Dockerfile"
-          target: "${{ env.DIR }}/"
-      # [ *********************************************** ]
-
-      # (10) 서버에서 .env 생성 및 도커 실행
+      # [ ******** (10)번 스텝 수정: 수동으로 tar 압축 해제 ******** ]
       - name: Deploy on server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -179,13 +169,19 @@ jobs:
             # (A) 앱 디렉토리(DIR)로 이동
             echo "🚀 Starting deployment in $DIR..."
             cd $DIR
+            
+            # (B) [신규] 압축 해제
+            echo "--- Extracting deploy.tar.gz ---"
+            tar -xzf deploy.tar.gz
+            rm deploy.tar.gz # 압축 파일 삭제
+            echo "--------------------------------"
 
-            # (B) 원격 서버의 파일 목록 확인 (디버깅)
+            # (C) 원격 서버의 파일 목록 확인 (디버깅)
             echo "--- Verifying files in $DIR (before build) ---"
             ls -l
             echo "----------------------------------------------"
             
-            # (C) .env 파일 생성
+            # (D) .env 파일 생성
             echo "Writing .env file..."
             cat > .env <<EOF
             TZ=$TZ
@@ -198,16 +194,16 @@ jobs:
             SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=$ENV_MAX_REQ_SIZE
             EOF
 
-            # (D) Docker 이미지 빌드
+            # (E) Docker 이미지 빌드
             echo "🐳 Building new Docker image: $APP_NAME"
             docker build -t $APP_NAME .
 
-            # (E) 기존 컨테이너 중지/삭제
+            # (F) 기존 컨테이너 중지/삭제
             echo "🛑 Stopping and removing old container: $APP_NAME"
             docker stop $APP_NAME || true
             docker rm $APP_NAME || true
 
-            # (F) 새 컨테이너 실행
+            # (G) 새 컨테이너 실행
             echo "▶️ Running new container: $APP_NAME"
             docker run -d \
               --name $APP_NAME \
