@@ -1,24 +1,23 @@
-# 워크플로우 이름
-name: ampm-storage CI/CD (Production)
+# .github/workflows/storage-ci-cd.yml
+name: ampm-storage CI/CD (Unified)
 
-# 워크플로우 실행 조건 (main 브랜치)
+# 워크플로우 실행 조건 (main과 develop 브랜치)
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 # 워크플로우 전체에서 사용할 환경 변수
 env:
   JAVA_VERSION: '21'
-  APP_NAME: ampm-storage # 🚨 프로덕션 앱 이름
 
 jobs:
   # =======================================================
-  # 1. CI Job (main 브랜치로의 Pull Request 시 실행)
+  # 1. CI Job (main/develop 브랜치로의 Pull Request 시 실행)
   # =======================================================
   ci:
-    name: Continuous Integration (Production)
+    name: Continuous Integration
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -36,11 +35,12 @@ jobs:
         run: ./gradlew build
 
   # =========================================================================
-  # 2. CD Job (main 브랜치에 Push(Merge) 시 실행)
+  # 2. CD Job (main/develop 브랜치에 Push(Merge) 시 실행)
   # =========================================================================
   cd:
-    name: Continuous Deployment (Production)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # 🚨 실행 브랜치: main
+    name: Continuous Deployment
+    # PUSH 이벤트이면서, main 또는 develop 브랜치일 때만 실행
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     steps:
       # (1) 소스 코드 가져오기
@@ -51,43 +51,67 @@ jobs:
       - name: Archive source code
         run: zip -r source.zip . -x ".git/*" -x ".github/*"
 
-      # (3) 압축된 소스 코드를 서버로 복사 (SCP)
-      - name: Copy source code to Production server
+      # (3) [수정] 브랜치에 따라 환경 변수 선택
+      - name: Pick environment
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          if [ "$BRANCH" = "main" ]; then
+            {
+              echo "APP_NAME=ampm-storage"
+              echo "PROFILE=main"
+              echo "HOST=${{ secrets.DEPLOY_HOST }}"
+              echo "USER=${{ secrets.DEPLOY_USER }}"
+              echo "PASSWORD=${{ secrets.DEPLOY_SSH_PASSWORD }}"
+              echo "SSH_PORT=${{ secrets.DEPLOY_PORT }}"
+              echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}"
+              echo "APP_PORT=6736"
+              echo "APP_STORAGE_SECRET=${{ secrets.MAIN_APP_STORAGE_SECRET_KEY }}"
+            } >> $GITHUB_ENV
+          elif [ "$BRANCH" = "develop" ]; then
+            {
+              echo "APP_NAME=ampm-storage-test"
+              echo "PROFILE=test"
+              echo "HOST=${{ secrets.TEST_DEPLOY_HOST }}"
+              echo "USER=${{ secrets.TEST_DEPLOY_USER }}"
+              echo "PASSWORD=${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}"
+              echo "SSH_PORT=${{ secrets.TEST_DEPLOY_PORT }}"
+              echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}"
+              echo "APP_PORT=6737"
+              echo "APP_STORAGE_SECRET=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}"
+            } >> $GITHUB_ENV
+          fi
+
+      # (4) [수정] 압축된 소스 코드를 서버로 복사 (변수 사용)
+      - name: Copy source code to server
         uses: appleboy/scp-action@v0.1.4
         with:
-          # 🚨 프로덕션 서버용 Secret 사용
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          port: ${{ env.SSH_PORT }}
           source: "source.zip"
-          target: ${{ secrets.MAIN_STORAGE_BASE }}/ 
-          rm: true 
+          target: ${{ env.STORAGE_BASE }}/
+          rm: true
 
-      # (4) Secret을 GitHub Actions 환경 변수로 설정
-      - name: Set secrets as environment variables
-        run: |
-          echo "SECRET_KEY=${{ secrets.APP_STORAGE_SECRET_KEY }}" >> $GITHUB_ENV
-          echo "STORAGE_PATH=${{ secrets.MAIN_STORAGE_BASE }}" >> $GITHUB_ENV
-
-      # (5) 서버에 접속하여 배포 실행 (SSH) (✅ 수정됨)
-      - name: Deploy on Production server via SSH
+      # (5) [수정] 서버에 접속하여 배포 실행 (변수 사용)
+      - name: Deploy on server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # --- ⚠️ 이 부분들이 누락되지 않아야 합니다 ---
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          # -----------------------------------------------
-          
-          envs: SECRET_KEY,STORAGE_PATH
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          password: ${{ env.PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+
+          # Pick environment에서 설정한 변수들을 SSH 세션으로 전달
+          envs: APP_NAME, PROFILE, STORAGE_BASE, APP_PORT, APP_STORAGE_SECRET
+
           script: |
             set -euo pipefail
             
-            # (A) 타겟 디렉토리(STORAGE_PATH)로 이동
-            echo "🚀 Starting deployment in $STORAGE_PATH..."
-            cd $STORAGE_PATH
+            # (A) 타겟 디렉토리(STORAGE_BASE)로 이동
+            echo "🚀 Starting deployment in $STORAGE_BASE..."
+            cd $STORAGE_BASE
 
             # (B) 소스 코드 압축 해제 (같은 위치)
             echo "📦 Unzipping source code..."
@@ -96,22 +120,22 @@ jobs:
 
             # (C) Docker 이미지 빌드 (같은 위치)
             echo "🐳 Building new Docker image from source..."
-            docker build -t ${{ env.APP_NAME }} .
+            docker build -t $APP_NAME .
 
             # (D) 기존 컨테이너 중지/삭제
             echo "🛑 Stopping and removing old container..."
-            docker stop ${{ env.APP_NAME }} || true
-            docker rm ${{ env.APP_NAME }} || true
+            docker stop $APP_NAME || true
+            docker rm $APP_NAME || true
 
-            # (E) 새 컨테이너 실행 (주석 제거됨)
+            # (E) 새 컨테이너 실행 (변수화됨)
             echo "▶️ Running new container..."
             docker run -d \
-              -p 6736:6736 \
-              --name ${{ env.APP_NAME }} \
-              -v "$STORAGE_PATH:/files" \
-              -e SPRING_PROFILES_ACTIVE=main \
-              -e APP_STORAGE_SECRET_KEY="$SECRET_KEY" \
+              -p $APP_PORT:6736 \
+              --name $APP_NAME \
+              -v "$STORAGE_BASE:/files" \
+              -e SPRING_PROFILES_ACTIVE=$PROFILE \
+              -e APP_STORAGE_SECRET_KEY="$APP_STORAGE_SECRET" \
               -e APP_STORAGE_UPLOAD_DIR=/files \
-              ${{ env.APP_NAME }}
+              $APP_NAME
             
-            echo "🎉 Production Deployment successful!"
+            echo "🎉 Deployment successful!"
