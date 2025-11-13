@@ -85,10 +85,11 @@ jobs:
               echo "USER=${{ secrets.DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.DEPLOY_PORT }}"
-              echo "DIR=ampm-storage" # <-- [수정] Tilde(~) 제거
+              echo "DIR=ampm-storage"
               echo "STORAGE_BASE=${{ secrets.MAIN_STORAGE_BASE }}"
               echo "APP_PORT=6736"
               echo "APP_STORAGE_SECRET=${{ secrets.MAIN_APP_STORAGE_SECRET_KEY }}"
+              echo "FRONTEND_DOMAIN=${{ secrets.MAIN_FRONTEND_DOMAIN }}"
           
               echo "ENV_SPRING_APP_NAME=AmpmStorage"
               echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
@@ -104,10 +105,11 @@ jobs:
               echo "USER=${{ secrets.TEST_DEPLOY_USER }}"
               echo "PASSWORD=${{ secrets.TEST_DEPLOY_SSH_PASSWORD }}"
               echo "SSH_PORT=${{ secrets.TEST_DEPLOY_PORT }}"
-              echo "DIR=ampm-storage-test" # <-- [수정] Tilde(~) 제거
+              echo "DIR=ampm-storage-test"
               echo "STORAGE_BASE=${{ secrets.TEST_STORAGE_BASE }}"
               echo "APP_PORT=6737"
               echo "APP_STORAGE_SECRET=${{ secrets.TEST_APP_STORAGE_SECRET_KEY }}"
+              echo "FRONTEND_DOMAIN=${{ secrets.TEST_FRONTEND_DOMAIN }}"
           
               echo "ENV_SPRING_APP_NAME=AmpmStorage-Test"
               echo "ENV_INTERNAL_PORT=$INTERNAL_PORT"
@@ -138,7 +140,7 @@ jobs:
           ls -l
           echo "------------------------------------------------------"
 
-      # [ ******** (9)번 스텝 수정: 두 개로 분리 ******** ]
+      # (9) app.jar와 Dockerfile만 서버로 복사
       - name: Copy app.jar to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -158,7 +160,6 @@ jobs:
           port: ${{ env.SSH_PORT }}
           source: "Dockerfile"
           target: "$HOME/${{ env.DIR }}/" # [수정] $HOME 변수 사용
-      # [ *********************************************** ]
 
       # (10) 서버에서 .env 생성 및 도커 실행
       - name: Deploy on server via SSH
@@ -172,7 +173,8 @@ jobs:
             APP_NAME, PROFILE, DIR, STORAGE_BASE, APP_PORT, 
             APP_STORAGE_SECRET, ENV_SPRING_APP_NAME, 
             ENV_INTERNAL_PORT, ENV_UPLOAD_DIR, 
-            ENV_MAX_FILE_SIZE, ENV_MAX_REQ_SIZE, TZ
+            ENV_MAX_FILE_SIZE, ENV_MAX_REQ_SIZE, TZ,
+            FRONTEND_DOMAIN
 
           script: |
             set -euo pipefail
@@ -198,6 +200,7 @@ jobs:
             APP_STORAGE_UPLOAD_DIR=$ENV_UPLOAD_DIR
             SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=$ENV_MAX_FILE_SIZE
             SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=$ENV_MAX_REQ_SIZE
+            FRONTEND_DOMAIN=$FRONTEND_DOMAIN
             EOF
 
             # (D) Docker 이미지 빌드
