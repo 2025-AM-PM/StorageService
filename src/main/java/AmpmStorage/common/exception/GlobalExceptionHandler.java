@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Hidden // Springdoc OpenAPI 문서에서 이 클래스를 숨깁니다.
 @Slf4j
@@ -34,6 +35,15 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<String> handleNoResourceFound(NoResourceFoundException e) {
+        // "fetch 오류"를 일으킨 OPTIONS 요청은 로그에 남기지 않음
+        if (!e.getHttpMethod().equals("OPTIONS")) {
+            log.warn("404 Not Found: {}", e.getMessage());
+        }
+        return new ResponseEntity<>("Resource not found", HttpStatus.NOT_FOUND);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleAllExceptions(Exception e) {
         log.error("Unhandled Exception: ", e);
@@ -43,4 +53,6 @@ public class GlobalExceptionHandler {
         );
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+
 }

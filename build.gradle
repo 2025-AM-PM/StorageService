@@ -27,7 +27,14 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
-	    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
+	// 1. [필수] "Cannot resolve symbol 'security'" 오류 해결
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	// 2. [필수] Docker 로그의 'NoProviderFoundException' (Validation) 오류 해결
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
