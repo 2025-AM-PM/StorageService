@@ -126,12 +126,9 @@ jobs:
           echo "========================================="
           echo "   [디버깅] 실제 적용된 접속 정보 확인"
           echo "========================================="
-          
-          # HOST 값의 글자 사이사이에 공백을 넣어 출력 (예: 1 . 2 . 3 . 4)
-          echo "HOST (Unmasked): $(echo "${{ env.HOST }}" | sed 's/./& /g')"
-          
+
           # PORT 값의 글자 사이사이에 공백을 넣어 출력 (예: 1 0 0 2 2)
-          # echo "PORT (Unmasked): $(echo "${{ env.SSH_PORT }}" | sed 's/./& /g')"
+          echo "PORT (Unmasked): $(echo "${{ env.SSH_PORT }}" | sed 's/./& /g')"
           
           # HOST가 비어있는지 체크
           if [ -z "${{ env.HOST }}" ]; then
