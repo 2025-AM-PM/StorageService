@@ -119,7 +119,7 @@ jobs:
             } >> $GITHUB_ENV
           fi
 
-      # (7) 원격 서버에 디렉터리 생성 (SSH 스크립트에서 $HOME 사용)
+      # (7) 원격 서버에 디렉터리 생성 (SSH 스크립트에서 /home/ampm 사용)
       - name: Make remote dirs
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -128,8 +128,8 @@ jobs:
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
           script: |
-            # [수정] $HOME 변수를 사용하여 절대 경로 보장
-            mkdir -p "$HOME/${{ env.DIR }}"
+            # [수정] /home/ampm 변수를 사용하여 절대 경로 보장
+            mkdir -p "/home/ampm/${{ env.DIR }}"
             mkdir -p "${{ env.STORAGE_BASE }}"
 
       # (8) 복사 전 GitHub Runner의 파일 목록 확인 (디버깅)
@@ -149,7 +149,7 @@ jobs:
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
           source: "app.jar"
-          target: "$HOME/${{ env.DIR }}/" # [수정] $HOME 변수 사용
+          target: "/home/ampm/${{ env.DIR }}/" # [수정] /home/ampm 변수 사용
 
       - name: Copy Dockerfile to server
         uses: appleboy/scp-action@v0.1.7
@@ -159,7 +159,7 @@ jobs:
           password: ${{ env.PASSWORD }}
           port: ${{ env.SSH_PORT }}
           source: "Dockerfile"
-          target: "$HOME/${{ env.DIR }}/" # [수정] $HOME 변수 사용
+          target: "/home/ampm/${{ env.DIR }}/" # [수정] /home/ampm 변수 사용
 
       # (10) 서버에서 .env 생성 및 도커 실행
       - name: Deploy on server via SSH
@@ -179,12 +179,12 @@ jobs:
           script: |
             set -euo pipefail
             
-            # (A) 앱 디렉토리(DIR)로 이동 (SSH 세션에서 $HOME 확장)
-            echo "🚀 Starting deployment in $HOME/$DIR..."
-            cd "$HOME/$DIR"
+            # (A) 앱 디렉토리(DIR)로 이동 (SSH 세션에서 /home/ampm 확장)
+            echo "🚀 Starting deployment in /home/ampm/$DIR..."
+            cd "/home/ampm/$DIR"
 
             # (B) 원격 서버의 파일 목록 확인 (디버깅)
-            echo "--- Verifying files in $HOME/$DIR (before build) ---"
+            echo "--- Verifying files in /home/ampm/$DIR (before build) ---"
             pwd
             ls -l
             echo "----------------------------------------------"
